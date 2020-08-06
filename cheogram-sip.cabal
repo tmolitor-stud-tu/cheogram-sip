@@ -1,0 +1,41 @@
+cabal-version:       2.2
+name:                cheogram-sip
+version:             0.1.0
+synopsis:            XMPP to SIP bridge
+homepage:            https://git.singpolyma.net/cheogram-sip
+license:             AGPL-3.0-or-later
+license-file:        COPYING
+author:              Stephen Paul Weber
+maintainer:          singpolyma@singpolyma.net
+build-type:          Simple
+
+common defs
+  default-language:    Haskell2010
+  ghc-options:         -Wall -Wno-tabs -Wno-orphans
+  build-depends:       base                  >=4.11 && <4.12,
+                       attoparsec            >=0.13 && <0.14,
+                       basic-prelude         >=0.7 && <0.8,
+                       bytestring            >=0.10 && <0.11,
+                       cache                 >=0.1 && <0.2,
+                       containers            >=0.5 && <0.6,
+                       clock                 >=0.7 && <0.8,
+                       errors                >=2.3 && <2.4,
+                       focus                 >= 1.0.1 && < 1.1,
+                       lens                  >=4.16 && <4.17,
+                       mime-mail             >=0.4 && < 0.5,
+                       network               >= 2.6.3 && < 2.7,
+                       network-protocol-xmpp >=0.4 && <0.5,
+                       network-uri           >=2.6 && <2.7,
+                       purebred-email        >=0.4.1 && <0.5,
+                       stm                   >=2.4 && <2.5,
+                       stm-containers        >= 1.1.0 && < 1.2,
+                       stm-delay             >=0.1 && <0.2,
+                       text                  >=1.2 && <1.3,
+                       time                  >=1.5 && <2.0,
+                       unexceptionalio-trans >=0.5 && <0.6,
+                       uuid                  >= 1.3.13 && < 1.4,
+                       xml-types             >=0.3 && <0.4
+
+executable gateway
+  import:              defs
+  main-is:             gateway.hs
