@@ -6,7 +6,7 @@ import System.IO
 	(stdout, stderr, hSetBuffering, BufferMode(LineBuffering))
 import Control.Concurrent              (threadDelay)
 import Control.Concurrent.STM          (STM)
-import Control.Error                   (exceptT, ExceptT(..), headZ, throwE)
+import Control.Error                   (exceptT, ExceptT(..), headZ, throwE, lastZ)
 import Control.Lens                    (over, set, at, _Right, traverseOf)
 import Network                         (PortID (PortNumber))
 import System.Clock                    (TimeSpec(..))
@@ -169,7 +169,7 @@ main = do
 							}
 				| XMPP.ReceivedMessage m <- stanza,
 				  XMPP.messageType m == XMPP.MessageError,
-				  (errPayload:_) <- XMPP.messagePayloads m,
+				  Just errPayload <- lastZ $ XMPP.messagePayloads m,
 				  Just sid <- T.stripPrefix (s"proposal%") =<< XMPP.messageID m -> do
 					minit <- liftIO $ Cache.lookup' sessionInitiates sid
 					forM_ minit $ \init -> do
