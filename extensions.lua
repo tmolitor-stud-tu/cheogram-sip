@@ -31,7 +31,7 @@ extensions = {
 			local jid = (
 				jid_escape(extension)
 				.. "@sip.cheogram.com/"
-				.. jid_escape(channel.SIPURI:get():gsub("^sip:", ""))
+				.. jid_escape(channel.SIP_HEADER("From"):get():gsub("^[^<]*<sip:", ""):gsub(">.*$", ""))
 			):gsub("\\", "\\\\")
 
 			app.dial(
