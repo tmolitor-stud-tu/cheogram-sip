@@ -196,10 +196,9 @@ main = do
 					forM_ minit $ \init -> do
 						liftIO $ Cache.delete sessionInitiates sid
 						XMPP.putStanza $ iqError errPayload init
-				| otherwise ->
-					let
-						Just from = realToAsterisk componentJid sfrom (receivedTo stanza)
-					in
+				| Just from <- realToAsterisk componentJid sfrom (receivedTo stanza) ->
 					bounceStanza stanza from asteriskJid
+				| otherwise ->
+					print ("DUNNO", stanza)
 
 	return ()
