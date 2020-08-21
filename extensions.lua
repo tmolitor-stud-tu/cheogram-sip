@@ -16,15 +16,16 @@ end
 extensions = {
 	public = {
 		["_X!"] = function(context, extension)
-			app.hangup(1)
+			app.log("NOTICE", "Call from '' (" .. channel.CHANNEL("peerip"):get() .. ":0) to extension '" .. extension .. "' rejected because extension not found in context 'public'.")
+			app.goto("i", 1)
 		end;
 
-		["_[a-z]"] = function(context, extension)
-			app.hangup(1)
+		["i"] = function(context, extension)
+			app.goto("default", "i", 1)
 		end;
 
-		["_[a-z][a-z]"] = function(context, extension)
-			app.hangup(1)
+		["h"] = function(context, extension)
+			app.goto("default", "h", 1)
 		end;
 
 		["_."] = function(context, extension)
