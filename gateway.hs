@@ -6,18 +6,24 @@ import System.IO
 	(stdout, stderr, hSetBuffering, BufferMode(LineBuffering))
 import Control.Concurrent              (threadDelay)
 import Control.Concurrent.STM          (STM)
+import Data.Either                     (fromRight)
 import Control.Error                   (exceptT, ExceptT(..), headZ, throwE, lastZ)
+import Safe                            (maximumByMay)
 import Control.Lens                    (over, set, at, _Right, traverseOf)
 import Network                         (PortID (PortNumber))
 import System.Clock                    (TimeSpec(..))
 import Data.Time.Clock                 (getCurrentTime)
+import Control.Monad.Loops             (anyM)
 import qualified Focus
 import qualified Data.Text as T
+import qualified Data.ByteString as B
 import qualified Data.Cache as Cache
+import qualified Database.Redis as Redis
 import qualified Network.Protocol.XMPP as XMPP
 import qualified Network.Protocol.XMPP.Internal as XMPP
 import qualified Data.XML.Types as XML
 
+import qualified RedisURL
 import Util
 
 Just asteriskJid = XMPP.parseJID $ s"asterisk"
@@ -95,11 +101,13 @@ main = do
 	hSetBuffering stdout LineBuffering
 	hSetBuffering stderr LineBuffering
 
-	(componentJidTxt:host:portTxt:secret:[]) <- getArgs
+	(componentJidTxt:host:portTxt:secret:redisURL:[]) <- getArgs
 	let Just componentJid = XMPP.parseJID componentJidTxt
 	let port = PortNumber $ read portTxt
 	let server = XMPP.Server componentJid (textToString host) port
+	let Right redisConnectInfo = RedisURL.parseConnectInfo $ textToString redisURL
 
+	redis <- Redis.checkedConnect redisConnectInfo
 	sessionInitiates <- Cache.newCache (Just $ TimeSpec 900 0)
 	fullJids <- Cache.newCache (Just $ TimeSpec 900 0)
 	-- exceptT print return $ runRoutedComponent server secret $ do
@@ -114,17 +122,30 @@ main = do
 				  Just (iq, sid) <- sessionInitiateId stanza -> do
 					let Just (to, from) = asteriskToReal componentJid $ receivedTo stanza
 					liftIO $ Cache.purgeExpired sessionInitiates
-					liftIO $ Cache.insert sessionInitiates sid iq
-					XMPP.putStanza $ (XMPP.emptyMessage XMPP.MessageNormal) {
-							XMPP.messageID = Just $ s"proposal%" ++ sid,
-							XMPP.messageTo = Just to,
-							XMPP.messageFrom = Just from,
-							XMPP.messagePayloads = [
-								XML.Element (s"{urn:xmpp:jingle-message:0}propose")
-									[(s"id", [XML.ContentText sid])]
-									[XML.NodeElement $ XML.Element (s"{urn:xmpp:jingle:apps:rtp:1}description") [(s"media", [XML.ContentText $ s"audio"])] []]
-							]
-						}
+
+					mostAvailable <- liftIO $ Redis.runRedis redis $ do
+						Right resources <- Redis.hgetall (encodeUtf8 $ bareTxt to)
+						jingleMessage <- anyM (fmap (fromRight False) . flip Redis.sismember (s"urn:xmpp:jingle-message:0")) $ map (B.drop 2 . snd) resources
+						-- TODO: check if mostAvailable supports jingle audio. really we want most available that does
+						return $ mfilter (const $ not jingleMessage) $
+							(decodeUtf8 . fst <$> maximumByMay (comparing snd) resources)
+
+					case mostAvailable of
+						Just resource | Just fullToJid <- XMPP.parseJID (bareTxt to ++ s"/" ++ resource) -> do
+							liftIO $ Cache.insert fullJids sid fullToJid
+							bounceStanza (XMPP.ReceivedIQ iq) from fullToJid
+						_ -> do
+							liftIO $ Cache.insert sessionInitiates sid iq
+							XMPP.putStanza $ (XMPP.emptyMessage XMPP.MessageNormal) {
+									XMPP.messageID = Just $ s"proposal%" ++ sid,
+									XMPP.messageTo = Just to,
+									XMPP.messageFrom = Just from,
+									XMPP.messagePayloads = [
+										XML.Element (s"{urn:xmpp:jingle-message:0}propose")
+											[(s"id", [XML.ContentText sid])]
+											[XML.NodeElement $ XML.Element (s"{urn:xmpp:jingle:apps:rtp:1}description") [(s"media", [XML.ContentText $ s"audio"])] []]
+									]
+								}
 			Just sfrom | sfrom == asteriskJid ->
 				let
 					Just (to, from) = asteriskToReal componentJid $ receivedTo stanza
