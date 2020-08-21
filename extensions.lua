@@ -13,6 +13,14 @@ function jid_escape(s)
 		:gsub("@", "\\40")
 end
 
+function make_jid(extension, from_header)
+	return (
+		jid_escape(extension)
+		.. "@sip.cheogram.com/"
+		.. jid_escape(from_header:gsub("^[^<]*<sip:", ""):gsub(">.*$", ""))
+	):gsub("\\", "\\\\")
+end
+
 extensions = {
 	public = {
 		["_X!"] = function(context, extension)
@@ -29,15 +37,15 @@ extensions = {
 		end;
 
 		["_."] = function(context, extension)
-			local jid = (
-				jid_escape(extension)
-				.. "@sip.cheogram.com/"
-				.. jid_escape(channel.SIP_HEADER("From"):get():gsub("^[^<]*<sip:", ""):gsub(">.*$", ""))
-			):gsub("\\", "\\\\")
+			if channel.CHANNEL("channeltype"):get() == "Message" then
+				local jid = make_jid(extension, channel.MESSAGE("from"):get())
 
-			app.dial(
-				"Motif/jingle-endpoint/" .. jid
-			)
+				app.MessageSend("xmpp:" .. jid, "xmpp:asterisk")
+			else
+				local jid = make_jid(extension, channel.SIP_HEADER("From"):get())
+
+				app.dial("Motif/jingle-endpoint/" .. jid)
+			end
 		end;
 	};
 }
