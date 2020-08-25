@@ -24,6 +24,8 @@ This project implements all of the gateway handling, but heavy lifting is done b
 
 If you have any questions about this project, or wish to report a bug, please send email to: dev@singpolyma.net
 
+This project is part of the [Soprani.ca](https://soprani.ca) family of projects, and you may connect with the community in the chatroom via `xmpp:discuss@conference.soprani.ca?join` or [on the web](https://anonymous.cheogram.com/discuss@conference.soprani.ca).
+
 ## Contributing
 
 If you have code or patches you wish to contribute, the maintainer's preferred mechanism is a git pull request.  Push your changes to a git repository somewhere, for example:
