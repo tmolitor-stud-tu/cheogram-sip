@@ -17,6 +17,7 @@ import Control.Monad.Loops             (anyM)
 import qualified Focus
 import qualified Data.Text as T
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Base64 as Base64
 import qualified Data.Cache as Cache
 import qualified Database.Redis as Redis
 import qualified Network.Protocol.XMPP as XMPP
@@ -27,6 +28,36 @@ import qualified RedisURL
 import Util
 
 Just asteriskJid = XMPP.parseJID $ s"asterisk"
+
+sipCapsHash = decodeUtf8 $ Base64.encode $ discoToCapsHash (sipDiscoInfo $ XML.Element (s"x") [] [])
+
+sipAvailable from to =
+	(XMPP.emptyPresence XMPP.PresenceAvailable) {
+		XMPP.presenceTo = Just to,
+		XMPP.presenceFrom = XMPP.parseJID $ (bareTxt from) ++ (s"/sip"),
+		XMPP.presencePayloads = [
+			XML.Element (s"{http://jabber.org/protocol/caps}c") [
+				(s"{http://jabber.org/protocol/caps}hash", [XML.ContentText $ s"sha-1"]),
+				(s"{http://jabber.org/protocol/caps}node", [XML.ContentText $ s "xmpp:sip.cheogram.com"]),
+				(s"{http://jabber.org/protocol/caps}ver", [XML.ContentText sipCapsHash])
+			] []
+		]
+	}
+
+sipDiscoFeatures = [
+		s"http://jabber.org/protocol/caps",
+		s"http://jabber.org/protocol/disco#info",
+		s"urn:xmpp:jingle-message:0",
+		s"urn:xmpp:jingle:1",
+		s"urn:xmpp:jingle:apps:dtls:0",
+		s"urn:xmpp:jingle:apps:rtp:1",
+		s"urn:xmpp:jingle:apps:rtp:audio",
+		s"urn:xmpp:jingle:transports:ice-udp:1"
+	]
+
+sipDiscoInfo q = XML.Element (s"{http://jabber.org/protocol/disco#info}query")
+			(map (\node -> (s"{http://jabber.org/protocol/disco#info}node", [XML.ContentText node])) $ maybeToList $ XML.attributeText (s"node") q) $
+			(XML.NodeElement $ mkDiscoIdentity (s"client") (s"phone") (s"Cheogram SIP")) : (map (XML.NodeElement . mkDiscoFeature) sipDiscoFeatures)
 
 rewriteJingleInitiatorResponder iq
 	| Just jingle <- child (s"{urn:xmpp:jingle:1}jingle") iq = iq {
@@ -155,6 +186,45 @@ main = do
 					liftIO $ forM_ msid $ \sid -> forM_ fullTo $ Cache.insert fullJids sid
 					bounceStanza stanza from (fromMaybe to fullTo)
 			sfrom
+				| XMPP.ReceivedPresence presence <- stanza,
+				  Just from <- sfrom,
+				  Just to <- XMPP.stanzaTo presence,
+				  XMPP.PresenceSubscribe <- XMPP.presenceType presence -> do
+					XMPP.putStanza $ (XMPP.emptyPresence XMPP.PresenceSubscribed) {
+							XMPP.presenceTo = Just from,
+							XMPP.presenceFrom = Just to
+						}
+					XMPP.putStanza $ (XMPP.emptyPresence XMPP.PresenceSubscribe) {
+							XMPP.presenceTo = Just from,
+							XMPP.presenceFrom = Just to
+						}
+					XMPP.putStanza $ sipAvailable to from
+				| XMPP.ReceivedPresence presence <- stanza,
+				  Just from <- sfrom,
+				  Just to <- XMPP.stanzaTo presence,
+				  XMPP.PresenceProbe <- XMPP.presenceType presence -> do
+					XMPP.putStanza $ sipAvailable to from
+				| XMPP.ReceivedIQ iq <- stanza,
+				  Just from <- sfrom,
+				  Just to <- XMPP.stanzaTo iq,
+				  Just query <- child (s"{http://jabber.org/protocol/disco#info}query") iq ->
+					XMPP.putStanza $ iqReply (Just $ sipDiscoInfo query) iq
+				| XMPP.ReceivedMessage m <- stanza,
+				  Just from <- sfrom,
+				  Just to <- XMPP.stanzaTo m,
+				  Just propose <- child (s"{urn:xmpp:jingle-message:0}propose") m -> do
+					let sid = fromMaybe mempty $ XML.attributeText (s"id") propose
+					liftIO $ Cache.insert fullJids sid from
+					XMPP.putStanza $ (XMPP.emptyMessage XMPP.MessageNormal) {
+							XMPP.messageID = Just $ s"proceed%" ++ sid,
+							XMPP.messageTo = Just from,
+							XMPP.messageFrom = XMPP.parseJID $ (bareTxt to) ++ (s"/sip"),
+							XMPP.messagePayloads = [
+								XML.Element (s"{urn:xmpp:jingle-message:0}proceed")
+									[(s"id", [XML.ContentText sid])] []
+							]
+						}
+					-- TODO: directed presence
 				| XMPP.ReceivedMessage m <- stanza,
 				  Just from <- sfrom,
 				  Just to <- XMPP.stanzaTo m,
@@ -196,7 +266,9 @@ main = do
 					forM_ minit $ \init -> do
 						liftIO $ Cache.delete sessionInitiates sid
 						XMPP.putStanza $ iqError errPayload init
-				| Just from <- realToAsterisk componentJid sfrom (receivedTo stanza) ->
+				| Just from <- realToAsterisk componentJid sfrom (receivedTo stanza) -> do
+					liftIO $ forM_ sfrom $ \fullFrom -> forM_ (sessionInitiateId stanza) $ \(_, sid) ->
+						Cache.insert fullJids sid fullFrom
 					bounceStanza stanza from asteriskJid
 				| otherwise ->
 					print ("DUNNO", stanza)

@@ -6,6 +6,7 @@ import Control.Concurrent.STM          (STM, atomically)
 import Control.Applicative             (many)
 import Control.Concurrent
 	(ThreadId, forkFinally, myThreadId, throwTo)
+import Data.Digest.Pure.SHA (sha1, bytestringDigest)
 import Data.Void                       (absurd)
 import Control.Error                   (exceptT)
 import Data.Time.Clock                 (UTCTime)
@@ -17,6 +18,7 @@ import qualified Data.XML.Types        as XML
 import qualified Network.Protocol.XMPP as XMPP
 import           UnexceptionalIO.Trans (Unexceptional (lift))
 import qualified UnexceptionalIO.Trans as UIO
+import qualified Data.ByteString.Lazy as LZ
 
 instance Unexceptional XMPP.XMPP where
 	lift = liftIO . UIO.run
@@ -181,3 +183,61 @@ mkDiscoFeature var =
 
 (.:) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
 (.:) = (.) . (.)
+
+discoCapsIdentities :: XML.Element -> [Text]
+discoCapsIdentities query =
+	sort $
+	map (\identity -> mconcat $ intersperse (s"/") [
+		attrOrBlank (s"category") identity,
+		attrOrBlank (s"type") identity,
+		attrOrBlank (s"xml:lang") identity,
+		attrOrBlank (s"name") identity
+	]) $
+	XML.isNamed (s"{http://jabber.org/protocol/disco#info}identity") =<<
+		XML.elementChildren query
+
+discoVars :: XML.Element -> [Text]
+discoVars query =
+	mapMaybe (XML.attributeText (s"var")) $
+	XML.isNamed (s"{http://jabber.org/protocol/disco#info}feature") =<<
+		XML.elementChildren query
+
+data DiscoForm = DiscoForm Text [(Text, [Text])] deriving (Show, Ord, Eq)
+
+oneDiscoForm :: XML.Element -> DiscoForm
+oneDiscoForm form =
+	DiscoForm form_type (filter ((/= s"FORM_TYPE") . fst) fields)
+	where
+	form_type = mconcat $ fromMaybe [] $ lookup (s"FORM_TYPE") fields
+	fields = sort $ map (\field ->
+			(
+				attrOrBlank (s"var") field,
+				sort (map (mconcat . XML.elementText) $ XML.isNamed (s"{jabber:x:data}value") =<< XML.elementChildren form)
+			)
+		) $
+		XML.isNamed (s"{jabber:x:data}field") =<<
+			XML.elementChildren form
+
+discoForms :: XML.Element -> [DiscoForm]
+discoForms query =
+	sort $
+	map oneDiscoForm $
+	XML.isNamed (s"{jabber:x:data}x") =<<
+		XML.elementChildren query
+
+discoCapsForms :: XML.Element -> [Text]
+discoCapsForms query =
+	concatMap (\(DiscoForm form_type fields) ->
+		form_type : concatMap (uncurry (:)) fields
+	) (discoForms query)
+
+discoToCaps :: XML.Element -> Text
+discoToCaps query =
+	(mconcat $ intersperse (s"<") (discoCapsIdentities query ++ discoVars query ++ discoCapsForms query)) ++ s"<"
+
+discoToCapsHash :: XML.Element -> ByteString
+discoToCapsHash query =
+	LZ.toStrict $ bytestringDigest $ sha1 $ LZ.fromStrict $ encodeUtf8 $ discoToCaps query
+
+attrOrBlank :: XML.Name -> XML.Element -> Text
+attrOrBlank name el = fromMaybe mempty $ XML.attributeText name el

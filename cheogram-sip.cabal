@@ -14,6 +14,7 @@ common defs
   ghc-options:         -Wall -Wno-tabs -Wno-orphans
   build-depends:       base                  >=4.11 && <4.12,
                        attoparsec            >=0.13 && <0.14,
+                       base64-bytestring,
                        basic-prelude         >=0.7 && <0.8,
                        bytestring            >=0.10 && <0.11,
                        cache                 >=0.1 && <0.2,
@@ -32,6 +33,7 @@ common defs
                        network-uri           >=2.6 && <2.7,
                        purebred-email        >=0.4.1 && <0.5,
                        safe,
+                       SHA,
                        stm                   >=2.4 && <2.5,
                        stm-containers        >= 1.1.0 && < 1.2,
                        stm-delay             >=0.1 && <0.2,

@@ -13,6 +13,19 @@ function jid_escape(s)
 		:gsub("@", "\\40")
 end
 
+function jid_unescape(s)
+	return s
+		:gsub("\\20", " ")
+		:gsub("\\22", "\"")
+		:gsub("\\26", "&")
+		:gsub("\\27", "'")
+		:gsub("\\2f", "/")
+		:gsub("\\3a", ":")
+		:gsub("\\3c", "<")
+		:gsub("\\3e", ">")
+		:gsub("\\40", "@")
+end
+
 function make_jid(extension, from_header)
 	return (
 		jid_escape(extension)
@@ -46,6 +59,17 @@ extensions = {
 
 				app.dial("Motif/jingle-endpoint/" .. jid)
 			end
+		end;
+	};
+
+	["jingle"] = {
+		["jingle-endpoint"] = function(context, extension)
+			local jid = channel.CALLERID("name"):get()
+			local from = jid_unescape(jid:sub(0, jid:find("@") - 1))
+			local to = jid_unescape(jid:sub(jid:find("/") + 1))
+			app.log("NOTICE", from)
+			channel.CALLERID("all"):set(from .. "<" .. from .. ">")
+			app.dial("SIP/" .. to:gsub("\\", "\\\\"):gsub("&", "") .. "!!" .. from .. "@sip.cheogram.com")
 		end;
 	};
 }
