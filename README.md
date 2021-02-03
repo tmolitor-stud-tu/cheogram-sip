@@ -31,7 +31,7 @@ This project is part of the [Soprani.ca](https://soprani.ca) family of projects,
 If you have code or patches you wish to contribute, the maintainer's preferred mechanism is a git pull request.  Push your changes to a git repository somewhere, for example:
 
     git remote rename origin upstream
-    git remote add origin git@git.sr.ht:~yourname/dhall-ruby
+    git remote add origin git@git.sr.ht:~yourname/cheogram-sip
     git push -u origin master
 
 Then generate the pull request:
