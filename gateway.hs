@@ -167,7 +167,7 @@ main = do
 							bounceStanza (XMPP.ReceivedIQ iq) from fullToJid
 						_ -> do
 							liftIO $ Cache.insert sessionInitiates sid iq
-							XMPP.putStanza $ (XMPP.emptyMessage XMPP.MessageNormal) {
+							XMPP.putStanza $ (XMPP.emptyMessage XMPP.MessageChat) {
 									XMPP.messageID = Just $ s"proposal%" ++ sid,
 									XMPP.messageTo = Just to,
 									XMPP.messageFrom = Just from,
