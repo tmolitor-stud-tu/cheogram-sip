@@ -132,6 +132,26 @@ sessionInitiateId (XMPP.ReceivedIQ iq)
 		(,) iq <$> XML.attributeText (s"sid") jingle
 sessionInitiateId _ = Nothing
 
+-- Return the sessionID of a session-terminate, and Nothing if it's something else
+-- (or the terminate doesn't have a session somehow)
+sessionTerminateId :: XMPP.ReceivedStanza -> Maybe Text
+sessionTerminateId (XMPP.ReceivedIQ iq)
+	| Just jingle <- child (s"{urn:xmpp:jingle:1}jingle") iq,
+	  XML.attributeText (s"action") jingle == Just (s"session-terminate") =
+		XML.attributeText (s"sid") jingle
+sessionTerminateId _ = Nothing
+
+-- Decodes the JID and otherwise fowards the stanza on as-is
+-- Also keeps the fullJidCache fresh
+forwardOn :: XMPP.JID -> Cache.Cache Text XMPP.JID -> XMPP.ReceivedStanza -> XMPP.XMPP ()
+forwardOn componentJid fullJidCache stanza = do
+		fullTo <- liftIO $ maybe (return Nothing) (Cache.lookup' fullJidCache) msid
+		liftIO $ forM_ msid $ \sid -> forM_ fullTo $ Cache.insert fullJidCache sid
+		bounceStanza stanza from (fromMaybe to fullTo)
+	where
+	Just (to, from) = asteriskToReal componentJid $ receivedTo stanza
+	msid = jingleSid stanza
+
 main :: IO ()
 main = do
 	hSetBuffering stdout LineBuffering
@@ -182,14 +202,27 @@ main = do
 											[XML.NodeElement $ XML.Element (s"{urn:xmpp:jingle:apps:rtp:1}description") [(s"media", [XML.ContentText $ s"audio"])] []]
 									]
 								}
+			Just sfrom
+				| sfrom == asteriskJid,
+				  Just (to, from) <- asteriskToReal componentJid $ receivedTo stanza,
+				  Just sid <- sessionTerminateId stanza -> do
+					mIq <- liftIO $ Cache.lookup' sessionInitiates sid
+					case mIq of
+						Just _ -> do
+							liftIO $ Cache.delete sessionInitiates sid
+							XMPP.putStanza $ (XMPP.emptyMessage XMPP.MessageChat) {
+									XMPP.messageID = Just $ s"retract%" ++ sid,
+									XMPP.messageTo = Just to,
+									XMPP.messageFrom = Just from,
+									XMPP.messagePayloads = [
+										XML.Element (s"{urn:xmpp:jingle-message:0}retract")
+											[(s"id", [XML.ContentText sid])]
+											[]
+									]
+								}
+						Nothing -> forwardOn componentJid fullJids stanza
 			Just sfrom | sfrom == asteriskJid ->
-				let
-					Just (to, from) = asteriskToReal componentJid $ receivedTo stanza
-					msid = jingleSid stanza
-				in do
-					fullTo <- liftIO $ maybe (return Nothing) (Cache.lookup' fullJids) msid
-					liftIO $ forM_ msid $ \sid -> forM_ fullTo $ Cache.insert fullJids sid
-					bounceStanza stanza from (fromMaybe to fullTo)
+				forwardOn componentJid fullJids stanza
 			sfrom
 				| XMPP.ReceivedPresence presence <- stanza,
 				  Just from <- sfrom,
