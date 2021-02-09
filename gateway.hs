@@ -4,33 +4,30 @@ import Prelude ()
 import BasicPrelude
 import System.IO
 	(stdout, stderr, hSetBuffering, BufferMode(LineBuffering))
-import Control.Concurrent              (threadDelay)
-import Control.Concurrent.STM          (STM)
 import Data.Either                     (fromRight)
-import Control.Error                   (exceptT, ExceptT(..), headZ, throwE, lastZ)
+import Control.Error                   (lastZ)
 import Safe                            (maximumByMay)
-import Control.Lens                    (over, set, at, _Right, traverseOf)
 import Network                         (PortID (PortNumber))
 import System.Clock                    (TimeSpec(..))
-import Data.Time.Clock                 (getCurrentTime)
 import Control.Monad.Loops             (anyM)
-import qualified Focus
 import qualified Data.Text as T
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Base64 as Base64
 import qualified Data.Cache as Cache
 import qualified Database.Redis as Redis
 import qualified Network.Protocol.XMPP as XMPP
-import qualified Network.Protocol.XMPP.Internal as XMPP
 import qualified Data.XML.Types as XML
 
 import qualified RedisURL
 import Util
 
+asteriskJid :: XMPP.JID
 Just asteriskJid = XMPP.parseJID $ s"asterisk"
 
+sipCapsHash :: Text
 sipCapsHash = decodeUtf8 $ Base64.encode $ discoToCapsHash (sipDiscoInfo $ XML.Element (s"x") [] [])
 
+sipAvailable :: XMPP.JID -> XMPP.JID -> XMPP.Presence
 sipAvailable from to =
 	(XMPP.emptyPresence XMPP.PresenceAvailable) {
 		XMPP.presenceTo = Just to,
@@ -44,6 +41,7 @@ sipAvailable from to =
 		]
 	}
 
+sipDiscoFeatures :: [Text]
 sipDiscoFeatures = [
 		s"http://jabber.org/protocol/caps",
 		s"http://jabber.org/protocol/disco#info",
@@ -55,10 +53,12 @@ sipDiscoFeatures = [
 		s"urn:xmpp:jingle:transports:ice-udp:1"
 	]
 
+sipDiscoInfo :: XML.Element -> XML.Element
 sipDiscoInfo q = XML.Element (s"{http://jabber.org/protocol/disco#info}query")
 			(map (\node -> (s"{http://jabber.org/protocol/disco#info}node", [XML.ContentText node])) $ maybeToList $ XML.attributeText (s"node") q) $
 			(XML.NodeElement $ mkDiscoIdentity (s"client") (s"phone") (s"Cheogram SIP")) : (map (XML.NodeElement . mkDiscoFeature) sipDiscoFeatures)
 
+rewriteJingleInitiatorResponder :: XMPP.IQ -> XMPP.IQ
 rewriteJingleInitiatorResponder iq
 	| Just jingle <- child (s"{urn:xmpp:jingle:1}jingle") iq = iq {
 			XMPP.iqPayload = Just $ jingle {
@@ -72,6 +72,7 @@ rewriteJingleInitiatorResponder iq
 		| name == s"responder" = (name, [XML.ContentText $ maybe (s"") XMPP.formatJID (XMPP.iqFrom iq)])
 		| otherwise = (name, content)
 
+bounceStanza :: XMPP.ReceivedStanza -> XMPP.JID -> XMPP.JID -> XMPP.XMPP ()
 bounceStanza (XMPP.ReceivedMessage m) from to =
 	XMPP.putStanza $ m {
 		XMPP.messageFrom = Just from,
@@ -108,19 +109,23 @@ realToAsterisk componentJid (Just from) (Just XMPP.JID {
 	(escapeJid $ unescapeJid $ XMPP.strNode escapedTo)
 realToAsterisk _ _ _ = Nothing
 
-receivedFrom (XMPP.ReceivedMessage s) = XMPP.stanzaFrom s
-receivedFrom (XMPP.ReceivedPresence s) = XMPP.stanzaFrom s
-receivedFrom (XMPP.ReceivedIQ s) = XMPP.stanzaFrom s
+receivedFrom :: XMPP.ReceivedStanza -> Maybe XMPP.JID
+receivedFrom (XMPP.ReceivedMessage stanza) = XMPP.stanzaFrom stanza
+receivedFrom (XMPP.ReceivedPresence stanza) = XMPP.stanzaFrom stanza
+receivedFrom (XMPP.ReceivedIQ stanza) = XMPP.stanzaFrom stanza
 
-receivedTo (XMPP.ReceivedMessage s) = XMPP.stanzaTo s
-receivedTo (XMPP.ReceivedPresence s) = XMPP.stanzaTo s
-receivedTo (XMPP.ReceivedIQ s) = XMPP.stanzaTo s
+receivedTo :: XMPP.ReceivedStanza -> Maybe XMPP.JID
+receivedTo (XMPP.ReceivedMessage stanza) = XMPP.stanzaTo stanza
+receivedTo (XMPP.ReceivedPresence stanza) = XMPP.stanzaTo stanza
+receivedTo (XMPP.ReceivedIQ stanza) = XMPP.stanzaTo stanza
 
+jingleSid :: XMPP.ReceivedStanza -> Maybe Text
 jingleSid (XMPP.ReceivedIQ iq)
 	| Just jingle <- child (s"{urn:xmpp:jingle:1}jingle") iq =
 		XML.attributeText (s"sid") jingle
 jingleSid _ = Nothing
 
+sessionInitiateId :: XMPP.ReceivedStanza -> Maybe (XMPP.IQ, Text)
 sessionInitiateId (XMPP.ReceivedIQ iq)
 	| Just jingle <- child (s"{urn:xmpp:jingle:1}jingle") iq,
 	  XML.attributeText (s"action") jingle == Just (s"session-initiate") =
@@ -205,8 +210,8 @@ main = do
 				  XMPP.PresenceProbe <- XMPP.presenceType presence -> do
 					XMPP.putStanza $ sipAvailable to from
 				| XMPP.ReceivedIQ iq <- stanza,
-				  Just from <- sfrom,
-				  Just to <- XMPP.stanzaTo iq,
+				  Just _ <- sfrom,
+				  Just _ <- XMPP.stanzaTo iq,
 				  Just query <- child (s"{http://jabber.org/protocol/disco#info}query") iq ->
 					XMPP.putStanza $ iqReply (Just $ sipDiscoInfo query) iq
 				| XMPP.ReceivedMessage m <- stanza,
@@ -231,23 +236,23 @@ main = do
 				  Just proceed <- child (s"{urn:xmpp:jingle-message:0}proceed") m -> do
 					let sid = fromMaybe mempty $ XML.attributeText (s"id") proceed
 					minit <- liftIO $ Cache.lookup' sessionInitiates sid
-					forM_ minit $ \init -> do
+					forM_ minit $ \ini -> do
 						liftIO $ Cache.delete sessionInitiates sid
 						liftIO $ Cache.insert fullJids sid from
-						bounceStanza (XMPP.ReceivedIQ init) to from
+						bounceStanza (XMPP.ReceivedIQ ini) to from
 				| XMPP.ReceivedMessage m <- stanza,
-				  Just from <- sfrom,
-				  Just to <- XMPP.stanzaTo m,
+				  Just _ <- sfrom,
+				  Just _ <- XMPP.stanzaTo m,
 				  Just reject <- child (s"{urn:xmpp:jingle-message:0}reject") m -> do
 					let sid = fromMaybe mempty $ XML.attributeText (s"id") reject
 					minit <- liftIO $ Cache.lookup' sessionInitiates sid
-					forM_ minit $ \init -> do
+					forM_ minit $ \ini -> do
 						liftIO $ Cache.delete sessionInitiates sid
-						XMPP.putStanza $ iqReply Nothing init
+						XMPP.putStanza $ iqReply Nothing ini
 						XMPP.putStanza $ (XMPP.emptyIQ XMPP.IQSet) {
 								XMPP.iqID = Just $ s"CHEOGRAMIGNORE",
-								XMPP.iqTo = XMPP.iqFrom init,
-								XMPP.iqFrom = XMPP.iqTo init,
+								XMPP.iqTo = XMPP.iqFrom ini,
+								XMPP.iqFrom = XMPP.iqTo ini,
 								XMPP.iqPayload = Just $ XML.Element
 									(s"{urn:xmpp:jingle:1}jingle")
 									[
@@ -263,9 +268,9 @@ main = do
 				  Just errPayload <- lastZ $ XMPP.messagePayloads m,
 				  Just sid <- T.stripPrefix (s"proposal%") =<< XMPP.messageID m -> do
 					minit <- liftIO $ Cache.lookup' sessionInitiates sid
-					forM_ minit $ \init -> do
+					forM_ minit $ \ini -> do
 						liftIO $ Cache.delete sessionInitiates sid
-						XMPP.putStanza $ iqError errPayload init
+						XMPP.putStanza $ iqError errPayload ini
 				| Just from <- realToAsterisk componentJid sfrom (receivedTo stanza) -> do
 					liftIO $ forM_ sfrom $ \fullFrom -> forM_ (sessionInitiateId stanza) $ \(_, sid) ->
 						Cache.insert fullJids sid fullFrom

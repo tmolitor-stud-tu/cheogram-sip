@@ -36,7 +36,6 @@ module RedisURL (parseConnectInfo) where
 import Prelude ()
 import BasicPrelude
 import Control.Error.Util (note)
-import Control.Monad (guard)
 import Data.Monoid ((<>))
 import Database.Redis (ConnectInfo(..), defaultConnectInfo, PortID(..))
 import Network.HTTP.Base
