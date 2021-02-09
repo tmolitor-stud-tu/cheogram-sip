@@ -12,7 +12,7 @@ build-type:          Simple
 common defs
   default-language:    Haskell2010
   ghc-options:         -Wall -Wno-tabs -Wno-orphans
-  build-depends:       base                  >=4.11 && <4.12,
+  build-depends:       base                  >=4.11 && <4.13,
                        attoparsec            >=0.13 && <0.14,
                        base64-bytestring,
                        basic-prelude         >=0.7 && <0.8,
@@ -25,7 +25,7 @@ common defs
                        hedis,
                        HTTP,
                        http-types,
-                       lens                  >=4.16 && <4.17,
+                       lens                  >=4.16 && <4.18,
                        mime-mail             >=0.4 && < 0.5,
                        monad-loops,
                        network               >= 2.6.3 && < 2.7,
@@ -34,7 +34,7 @@ common defs
                        purebred-email        >=0.4.1 && <0.5,
                        safe,
                        SHA,
-                       stm                   >=2.4 && <2.5,
+                       stm                   >=2.4 && <2.6,
                        stm-containers        >= 1.1.0 && < 1.2,
                        stm-delay             >=0.1 && <0.2,
                        text                  >=1.2 && <1.3,
