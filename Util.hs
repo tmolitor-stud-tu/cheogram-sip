@@ -136,11 +136,8 @@ errorPayload typ definedCondition english morePayload =
 	XML.Element (s"{jabber:component:accept}error")
 	[(s"type", [XML.ContentText $ fromString typ])]
 	(
-		(
-			XML.NodeElement $ XML.Element definedConditionName [] []
-		) :
-		(
-			XML.NodeElement $ XML.Element
+		XML.NodeElement (XML.Element definedConditionName [] []) :
+		XML.NodeElement (XML.Element
 				(s"{urn:ietf:params:xml:ns:xmpp-stanzas}text")
 				[(s"xml:lang", [XML.ContentText $ s"en"])]
 				[XML.NodeContent $ XML.ContentText english]
@@ -233,7 +230,7 @@ discoCapsForms query =
 
 discoToCaps :: XML.Element -> Text
 discoToCaps query =
-	(mconcat $ intersperse (s"<") (discoCapsIdentities query ++ discoVars query ++ discoCapsForms query)) ++ s"<"
+	mconcat (intersperse (s"<") (discoCapsIdentities query ++ discoVars query ++ discoCapsForms query)) ++ s"<"
 
 discoToCapsHash :: XML.Element -> ByteString
 discoToCapsHash query =

@@ -31,7 +31,7 @@ sipAvailable :: XMPP.JID -> XMPP.JID -> XMPP.Presence
 sipAvailable from to =
 	(XMPP.emptyPresence XMPP.PresenceAvailable) {
 		XMPP.presenceTo = Just to,
-		XMPP.presenceFrom = XMPP.parseJID $ (bareTxt from) ++ (s"/sip"),
+		XMPP.presenceFrom = XMPP.parseJID $ bareTxt from ++ s"/sip",
 		XMPP.presencePayloads = [
 			XML.Element (s"{http://jabber.org/protocol/caps}c") [
 				(s"{http://jabber.org/protocol/caps}hash", [XML.ContentText $ s"sha-1"]),
@@ -56,7 +56,7 @@ sipDiscoFeatures = [
 sipDiscoInfo :: XML.Element -> XML.Element
 sipDiscoInfo q = XML.Element (s"{http://jabber.org/protocol/disco#info}query")
 			(map (\node -> (s"{http://jabber.org/protocol/disco#info}node", [XML.ContentText node])) $ maybeToList $ XML.attributeText (s"node") q) $
-			(XML.NodeElement $ mkDiscoIdentity (s"client") (s"phone") (s"Cheogram SIP")) : (map (XML.NodeElement . mkDiscoFeature) sipDiscoFeatures)
+			XML.NodeElement (mkDiscoIdentity (s"client") (s"phone") (s"Cheogram SIP")) : map (XML.NodeElement . mkDiscoFeature) sipDiscoFeatures
 
 rewriteJingleInitiatorResponder :: XMPP.IQ -> XMPP.IQ
 rewriteJingleInitiatorResponder iq
@@ -95,7 +95,7 @@ asteriskToReal componentJid (Just XMPP.JID {
 	XMPP.jidResource = Just escapedFrom
 }) = (,) <$> XMPP.parseJID (unescapeJid $ XMPP.strNode escapedTo) <*>
 	XMPP.parseJID (
-		(escapeJid $ unescapeJid $ XMPP.strResource escapedFrom) ++ s"@" ++
+		escapeJid (unescapeJid $ XMPP.strResource escapedFrom) ++ s"@" ++
 		bareTxt componentJid ++ s"/sip"
 	)
 asteriskToReal _ _ = Nothing
@@ -104,9 +104,9 @@ realToAsterisk :: XMPP.JID -> Maybe XMPP.JID -> Maybe XMPP.JID -> Maybe XMPP.JID
 realToAsterisk componentJid (Just from) (Just XMPP.JID {
 	XMPP.jidNode = Just escapedTo
 }) = XMPP.parseJID $
-	(escapeJid $ bareTxt from) ++ s"@" ++
+	escapeJid (bareTxt from) ++ s"@" ++
 	bareTxt componentJid ++ s"/" ++
-	(escapeJid $ unescapeJid $ XMPP.strNode escapedTo)
+	escapeJid (unescapeJid $ XMPP.strNode escapedTo)
 realToAsterisk _ _ _ = Nothing
 
 receivedFrom :: XMPP.ReceivedStanza -> Maybe XMPP.JID
@@ -129,7 +129,7 @@ sessionInitiateId :: XMPP.ReceivedStanza -> Maybe (XMPP.IQ, Text)
 sessionInitiateId (XMPP.ReceivedIQ iq)
 	| Just jingle <- child (s"{urn:xmpp:jingle:1}jingle") iq,
 	  XML.attributeText (s"action") jingle == Just (s"session-initiate") =
-		((,) iq) <$> XML.attributeText (s"sid") jingle
+		(,) iq <$> XML.attributeText (s"sid") jingle
 sessionInitiateId _ = Nothing
 
 main :: IO ()
@@ -137,7 +137,7 @@ main = do
 	hSetBuffering stdout LineBuffering
 	hSetBuffering stderr LineBuffering
 
-	(componentJidTxt:host:portTxt:secret:redisURL:[]) <- getArgs
+	[componentJidTxt, host, portTxt, secret, redisURL] <- getArgs
 	let Just componentJid = XMPP.parseJID componentJidTxt
 	let port = PortNumber $ read portTxt
 	let server = XMPP.Server componentJid (textToString host) port
@@ -163,7 +163,7 @@ main = do
 						Right resources <- Redis.hgetall (encodeUtf8 $ bareTxt to)
 						jingleMessage <- anyM (fmap (fromRight False) . flip Redis.sismember (s"urn:xmpp:jingle-message:0")) $ map (B.drop 2 . snd) resources
 						-- TODO: check if mostAvailable supports jingle audio. really we want most available that does
-						return $ mfilter (const $ not jingleMessage) $
+						return $ mfilter (const $ not jingleMessage)
 							(decodeUtf8 . fst <$> maximumByMay (comparing snd) resources)
 
 					case mostAvailable of
@@ -223,7 +223,7 @@ main = do
 					XMPP.putStanza $ (XMPP.emptyMessage XMPP.MessageNormal) {
 							XMPP.messageID = Just $ s"proceed%" ++ sid,
 							XMPP.messageTo = Just from,
-							XMPP.messageFrom = XMPP.parseJID $ (bareTxt to) ++ (s"/sip"),
+							XMPP.messageFrom = XMPP.parseJID $ bareTxt to ++ s"/sip",
 							XMPP.messagePayloads = [
 								XML.Element (s"{urn:xmpp:jingle-message:0}proceed")
 									[(s"id", [XML.ContentText sid])] []
@@ -257,7 +257,7 @@ main = do
 									(s"{urn:xmpp:jingle:1}jingle")
 									[
 										(s"action", [XML.ContentText $ s"session-terminate"]),
-										(s"sid", [XML.ContentText $ sid])
+										(s"sid", [XML.ContentText sid])
 									]
 									[XML.NodeElement $ XML.Element (s"{urn:xmpp:jingle:1}reason") [] [
 										XML.NodeElement $ XML.Element (s"{urn:xmpp:jingle:1}decline") [] []
