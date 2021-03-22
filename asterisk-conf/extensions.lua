@@ -1,3 +1,11 @@
+function hex_to_char(x)
+  return string.char(tonumber(x, 16))
+end
+
+function uri_decode(uri)
+  return uri:gsub("%%(%x%x)", hex_to_char)
+end
+
 function jid_escape(s)
 	-- TODO: the class for escaping backslash is overbroad at the moment
 	return s
@@ -24,6 +32,7 @@ function jid_unescape(s)
 		:gsub("\\3c", "<")
 		:gsub("\\3e", ">")
 		:gsub("\\40", "@")
+		:gsub("\\5c", "\\")
 end
 
 function make_jid(extension, from_header)
@@ -36,11 +45,6 @@ end
 
 extensions = {
 	public = {
-		["_X!"] = function(context, extension)
-			app.log("NOTICE", "Call from '' (" .. channel.CHANNEL("peerip"):get() .. ":0) to extension '" .. extension .. "' rejected because extension not found in context 'public'.")
-			app.goto("i", 1)
-		end;
-
 		["i"] = function(context, extension)
 			app.goto("default", "i", 1)
 		end;
@@ -50,6 +54,12 @@ extensions = {
 		end;
 
 		["_."] = function(context, extension)
+			if not extension:find("%.") then
+				app.log("NOTICE", "Call from '' (" .. channel.CHANNEL("peerip"):get() .. ":0) to extension '" .. extension .. "' rejected because extension not found in context 'public'.")
+				app.goto("i", 1)
+				return
+			end
+
 			if channel.CHANNEL("channeltype"):get() == "Message" then
 				local jid = make_jid(extension, channel.MESSAGE("from"):get())
 
@@ -62,14 +72,22 @@ extensions = {
 		end;
 	};
 
-	["jingle"] = {
+	jingle = {
 		["jingle-endpoint"] = function(context, extension)
 			local jid = channel.CALLERID("name"):get()
 			local from = jid_unescape(jid:sub(0, jid:find("@") - 1))
 			local to = jid_unescape(jid:sub(jid:find("/") + 1))
-			app.log("NOTICE", from)
 			channel.CALLERID("all"):set(from .. "<" .. from .. ">")
-			app.dial("SIP/" .. to:gsub("\\", "\\\\"):gsub("&", "") .. "!!" .. from .. "@sip.cheogram.com")
+			app.dial("SIP/" .. to:gsub("\\", "\\\\"):gsub("&", "") .. "!!" .. from:gsub("\\", "\\\\") .. "@sip.cheogram.com")
+		end;
+	};
+
+	xmpp = {
+		["s"] = function(context, extension)
+			local jid = channel.MESSAGE("from"):get():sub(6)
+			local from = jid_unescape(jid:sub(0, jid:find("@") - 1))
+			local to = jid_unescape(jid:sub(jid:find("/") + 1))
+			app.MessageSend("sip:" .. to, from .. "<sip:" .. channel.URIENCODE(from):get() .. "@sip.cheogram.com>")
 		end;
 	};
 }
