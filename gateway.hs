@@ -308,6 +308,9 @@ main = do
 					liftIO $ forM_ sfrom $ \fullFrom -> forM_ (sessionInitiateId stanza) $ \(_, sid) ->
 						Cache.insert fullJids sid fullFrom
 					bounceStanza stanza from asteriskJid
+				| XMPP.ReceivedIQ iq <- stanza,
+				  XMPP.iqType iq `elem` [XMPP.IQGet, XMPP.IQSet] ->
+					XMPP.putStanza $ iqError notImplemented iq
 				| otherwise ->
 					print ("DUNNO", stanza)
 
