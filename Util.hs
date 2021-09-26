@@ -2,35 +2,19 @@ module Util where
 
 import Prelude ()
 import BasicPrelude
-import Control.Concurrent.STM          (STM, atomically)
 import Control.Applicative             (many)
 import Control.Concurrent
 	(ThreadId, forkFinally, myThreadId, throwTo)
 import Data.Digest.Pure.SHA (sha1, bytestringDigest)
-import Data.Void                       (absurd)
-import Control.Error                   (exceptT)
-import Data.Time.Clock                 (UTCTime)
-import Data.Time.Format                (parseTimeM, defaultTimeLocale)
 import qualified Control.Exception     as Ex
 import qualified Data.Attoparsec.Text  as Atto
 import qualified Data.Text             as Text
 import qualified Data.XML.Types        as XML
 import qualified Network.Protocol.XMPP as XMPP
-import           UnexceptionalIO.Trans (Unexceptional (lift))
-import qualified UnexceptionalIO.Trans as UIO
 import qualified Data.ByteString.Lazy as LZ
-
-instance Unexceptional XMPP.XMPP where
-	lift = liftIO . UIO.run
 
 s :: (IsString s) => String -> s
 s = fromString
-
-fromIO_ :: (Unexceptional m) => IO a -> m a
-fromIO_ = exceptT absurd return . UIO.fromIO' (error . show)
-
-atomicUIO :: (Unexceptional m) => STM a -> m a
-atomicUIO = fromIO_ . atomically
 
 escapeJid :: Text -> Text
 escapeJid txt = mconcat result
@@ -155,10 +139,6 @@ bareTxt :: XMPP.JID -> Text
 bareTxt (XMPP.JID (Just node) domain _) =
 	mconcat [XMPP.strNode node, s"@", XMPP.strDomain domain]
 bareTxt (XMPP.JID Nothing domain _) = XMPP.strDomain domain
-
-parseXMPPTime :: Text -> Maybe UTCTime
-parseXMPPTime =
-	parseTimeM False defaultTimeLocale "%Y-%m-%dT%H:%M:%S%QZ" . textToString
 
 mkElement :: XML.Name -> Text -> XML.Element
 mkElement name content = XML.Element name []
