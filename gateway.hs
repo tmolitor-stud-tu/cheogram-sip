@@ -125,6 +125,10 @@ jingleSid (XMPP.ReceivedIQ iq)
 		XML.attributeText (s"sid") jingle
 jingleSid _ = Nothing
 
+receivedIqId :: XMPP.ReceivedStanza -> Maybe Text
+receivedIqId (XMPP.ReceivedIQ (XMPP.IQ { XMPP.iqID = Just iqID })) = Just iqID
+receivedIqId _ = Nothing
+
 sessionInitiateId :: XMPP.ReceivedStanza -> Maybe (XMPP.IQ, Text)
 sessionInitiateId (XMPP.ReceivedIQ iq)
 	| Just jingle <- child (s"{urn:xmpp:jingle:1}jingle") iq,
@@ -150,7 +154,7 @@ forwardOn componentJid fullJidCache stanza = do
 		bounceStanza stanza from (fromMaybe to fullTo)
 	where
 	Just (to, from) = asteriskToReal componentJid $ receivedTo stanza
-	msid = jingleSid stanza
+	msid = jingleSid stanza <|> receivedIqId stanza
 
 main :: IO ()
 main = do
@@ -307,6 +311,8 @@ main = do
 				| Just from <- realToAsterisk componentJid sfrom (receivedTo stanza) -> do
 					liftIO $ forM_ sfrom $ \fullFrom -> forM_ (sessionInitiateId stanza) $ \(_, sid) ->
 						Cache.insert fullJids sid fullFrom
+					liftIO $ forM_ sfrom $ \fullFrom -> forM_ (receivedIqId stanza) $ \iqID ->
+						Cache.insert fullJids iqID fullFrom
 					bounceStanza stanza from asteriskJid
 				| XMPP.ReceivedIQ iq <- stanza,
 				  XMPP.iqType iq `elem` [XMPP.IQGet, XMPP.IQSet] ->
