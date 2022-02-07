@@ -1,9 +1,19 @@
-function hex_to_char(x)
-  return string.char(tonumber(x, 16))
-end
-
-function uri_decode(uri)
-  return uri:gsub("%%(%x%x)", hex_to_char)
+function textBase10Decode(digits)
+	if digits:sub(0, 2) == "99" then
+		result = ""
+		for i = 3,digits:len(),3
+		do
+			result = result .. string.char(tonumber(digits:sub(i, i+2)))
+		end
+		return result
+	else
+		result = ""
+		for i = 1,digits:len(),2
+		do
+			result = result .. string.char(tonumber(digits:sub(i, i+1)) + 30)
+		end
+		return result
+	end
 end
 
 function jid_escape(s)
@@ -54,6 +64,23 @@ extensions = {
 		end;
 
 		["_."] = function(context, extension)
+			local from = channel.SIP_HEADER("From"):get()
+			channel.original_extension = extension
+
+			if not extension:match("[^0-9]") then
+				from = from:gsub("^[^<]*<sip:", ""):gsub(">.*$", "")
+				extension = textBase10Decode(extension)
+				if from:match("^%+?[0-9]*@") then
+					if not extension:match("@cheogram%.com$") then
+						extension = jid_escape(extension) .. "@cheogram.com"
+					end
+					if from:byte(1) ~= 43 then
+						from = "+" .. from
+					end
+				end
+				from = "<sip:" .. from .. ">"
+			end
+
 			if not extension:find("%.") then
 				app.log("NOTICE", "Call from '' (" .. channel.CHANNEL("peerip"):get() .. ":0) to extension '" .. extension .. "' rejected because extension not found in context 'public'.")
 				app.goto("i", 1)
@@ -64,10 +91,11 @@ extensions = {
 				local jid = make_jid(extension, channel.MESSAGE("from"):get())
 
 				app.MessageSend("xmpp:" .. jid, "xmpp:asterisk")
+				app.hangup()
 			else
-				local jid = make_jid(extension, channel.SIP_HEADER("From"):get())
+				local jid = make_jid(extension, from)
 
-				app.dial("Motif/jingle-endpoint/" .. jid)
+				app.dial("Motif/jingle-endpoint/" .. jid, 300, "r")
 			end
 		end;
 	};
