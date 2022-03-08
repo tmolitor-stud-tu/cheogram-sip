@@ -58,6 +58,34 @@ sipDiscoInfo q = XML.Element (s"{http://jabber.org/protocol/disco#info}query")
 			(map (\node -> (s"{http://jabber.org/protocol/disco#info}node", [XML.ContentText node])) $ maybeToList $ XML.attributeText (s"node") q) $
 			XML.NodeElement (mkDiscoIdentity (s"client") (s"phone") (s"Cheogram SIP")) : map (XML.NodeElement . mkDiscoFeature) sipDiscoFeatures
 
+gatewayDiscoFeatures :: [Text]
+gatewayDiscoFeatures = [
+		s"http://jabber.org/protocol/caps",
+		s"http://jabber.org/protocol/disco#info"
+	]
+
+gatewayCapsHash :: Text
+gatewayCapsHash = decodeUtf8 $ Base64.encode $ discoToCapsHash (gatewayDiscoInfo $ XML.Element (s"x") [] [])
+
+gatewayDiscoInfo :: XML.Element -> XML.Element
+gatewayDiscoInfo q = XML.Element (s"{http://jabber.org/protocol/disco#info}query")
+			(map (\node -> (s"{http://jabber.org/protocol/disco#info}node", [XML.ContentText node])) $ maybeToList $ XML.attributeText (s"node") q) $
+			XML.NodeElement (mkDiscoIdentity (s"gateway") (s"sip") (s"Cheogram SIP")) : map (XML.NodeElement . mkDiscoFeature) gatewayDiscoFeatures
+
+gatewayAvailable :: XMPP.JID -> XMPP.JID -> XMPP.Presence
+gatewayAvailable from to =
+	(XMPP.emptyPresence XMPP.PresenceAvailable) {
+		XMPP.presenceTo = Just to,
+		XMPP.presenceFrom = XMPP.parseJID $ bareTxt from ++ s"/gateway",
+		XMPP.presencePayloads = [
+			XML.Element (s"{http://jabber.org/protocol/caps}c") [
+				(s"{http://jabber.org/protocol/caps}hash", [XML.ContentText $ s"sha-1"]),
+				(s"{http://jabber.org/protocol/caps}node", [XML.ContentText $ s "xmpp:sip.cheogram.com"]),
+				(s"{http://jabber.org/protocol/caps}ver", [XML.ContentText gatewayCapsHash])
+			] []
+		]
+	}
+
 rewriteJingleInitiatorResponder :: XMPP.IQ -> XMPP.IQ
 rewriteJingleInitiatorResponder iq
 	| Just jingle <- child (s"{urn:xmpp:jingle:1}jingle") iq = iq {
@@ -240,17 +268,23 @@ main = do
 							XMPP.presenceTo = Just from,
 							XMPP.presenceFrom = Just to
 						}
-					XMPP.putStanza $ sipAvailable to from
+					XMPP.putStanza $ case XMPP.jidNode to of
+						Just _ -> sipAvailable to from
+						Nothing -> gatewayAvailable to from
 				| XMPP.ReceivedPresence presence <- stanza,
 				  Just from <- sfrom,
 				  Just to <- XMPP.stanzaTo presence,
-				  XMPP.PresenceProbe <- XMPP.presenceType presence -> do
-					XMPP.putStanza $ sipAvailable to from
+				  XMPP.PresenceProbe <- XMPP.presenceType presence ->
+					XMPP.putStanza $ case XMPP.jidNode to of
+						Just _ -> sipAvailable to from
+						Nothing -> gatewayAvailable to from
 				| XMPP.ReceivedIQ iq <- stanza,
 				  Just _ <- sfrom,
-				  Just _ <- XMPP.stanzaTo iq,
+				  Just to <- XMPP.stanzaTo iq,
 				  Just query <- child (s"{http://jabber.org/protocol/disco#info}query") iq ->
-					XMPP.putStanza $ iqReply (Just $ sipDiscoInfo query) iq
+					XMPP.putStanza $ case XMPP.jidNode to of
+						Just _ -> iqReply (Just $ sipDiscoInfo query) iq
+						Nothing -> iqReply (Just $ gatewayDiscoInfo query) iq
 				| XMPP.ReceivedMessage m <- stanza,
 				  Just from <- sfrom,
 				  Just to <- XMPP.stanzaTo m,
