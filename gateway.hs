@@ -61,7 +61,8 @@ sipDiscoInfo q = XML.Element (s"{http://jabber.org/protocol/disco#info}query")
 gatewayDiscoFeatures :: [Text]
 gatewayDiscoFeatures = [
 		s"http://jabber.org/protocol/caps",
-		s"http://jabber.org/protocol/disco#info"
+		s"http://jabber.org/protocol/disco#info",
+		s"jid\\20escaping"
 	]
 
 gatewayCapsHash :: Text
