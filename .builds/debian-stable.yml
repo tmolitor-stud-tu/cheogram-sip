@@ -1,0 +1,26 @@
+image: debian/buster
+sources:
+- https://git.sr.ht/~singpolyma/cheogram-sip
+packages:
+- ghc
+- cabal-install
+- c2hs
+- pkg-config
+- libgsasl7-dev
+- libgnutls28-dev
+- libxml2-dev
+- libghc-basement-dev
+artifacts:
+- cheogram-sip/dist/build/gateway/gateway
+environment:
+  LANG: C.UTF-8
+tasks:
+- cabal_update: |
+    cabal update
+- dependencies: |
+    cd cheogram-sip
+    cabal install --only-dependencies
+- test: |
+    cd cheogram-sip
+    cabal configure
+    cabal build
