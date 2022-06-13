@@ -7,7 +7,6 @@ import System.IO
 import Data.Either                     (fromRight)
 import Control.Error                   (lastZ)
 import Safe                            (maximumByMay)
-import Network                         (PortID (PortNumber))
 import System.Clock                    (TimeSpec(..))
 import Control.Monad.Loops             (anyM)
 import qualified Data.Text as T
@@ -192,7 +191,7 @@ main = do
 
 	[componentJidTxt, host, portTxt, secret, redisURL] <- getArgs
 	let Just componentJid = XMPP.parseJID componentJidTxt
-	let port = PortNumber $ read portTxt
+	let port = read portTxt
 	let server = XMPP.Server componentJid (textToString host) port
 	let Right redisConnectInfo = RedisURL.parseConnectInfo $ textToString redisURL
 

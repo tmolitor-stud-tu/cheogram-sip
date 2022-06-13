@@ -1,0 +1,34 @@
+image: guix
+packages:
+- plzip
+sources:
+- https://git.sr.ht/~singpolyma/cheogram-sip
+secrets:
+- 9ded4157-4cf9-42ae-b7d0-55eb6e52ea37
+- fd52c9ce-04e8-4684-af6c-1ab78d2e124a
+artifacts:
+- cheogram-sip.scm
+- cheogram-sip.nar.lz
+tasks:
+- bake: |
+    printf "(define-module (cheogram-sip))\n" >> cheogram-sip.scm
+    sed '/^;;;;$/q' cheogram-sip/guix.scm >> cheogram-sip.scm
+    printf "(define-public cheogram-sip\n\t" >> cheogram-sip.scm
+    cd cheogram-sip
+    printf '(load "%s/guix.scm")\n(write cheogram-sip-baked)\n' "$(pwd)" | guix repl /dev/stdin >> ../cheogram-sip.scm
+    cd -
+    printf ")\n" >> cheogram-sip.scm
+    rm -f cheogram-sip/guix.scm
+    [ "$BUILD_REASON" = patchset ] || rm -rf cheogram-sip
+- build: |
+    if [ "$BUILD_REASON" = patchset ]; then with_source="--with-source=$PWD/cheogram-sip"; fi
+    guix build $with_source --no-grafts -r out -L. cheogram-sip
+- archive: |
+    if [ -e signing-key.sec ]; then
+      sudo mv signing-key.pub /etc/guix/
+      sudo mv signing-key.sec /etc/guix/
+      sudo chown root:root /etc/guix/signing-key.sec
+      sudo chmod 0400 /etc/guix/signing-key.sec
+    fi
+    guix archive --export -r --no-grafts $(readlink -f out-*) > cheogram-sip.nar
+    plzip cheogram-sip.nar
