@@ -231,7 +231,8 @@ main = do
 									XMPP.messagePayloads = [
 										XML.Element (s"{urn:xmpp:jingle-message:0}propose")
 											[(s"id", [XML.ContentText sid])]
-											[XML.NodeElement $ XML.Element (s"{urn:xmpp:jingle:apps:rtp:1}description") [(s"media", [XML.ContentText $ s"audio"])] []]
+											[XML.NodeElement $ XML.Element (s"{urn:xmpp:jingle:apps:rtp:1}description") [(s"media", [XML.ContentText $ s"audio"])] []],
+										XML.Element (s"{urn:xmpp:hints}store") [] []
 									]
 								}
 			Just sfrom
@@ -249,7 +250,8 @@ main = do
 									XMPP.messagePayloads = [
 										XML.Element (s"{urn:xmpp:jingle-message:0}retract")
 											[(s"id", [XML.ContentText sid])]
-											[]
+											[],
+										XML.Element (s"{urn:xmpp:hints}store") [] []
 									]
 								}
 						Nothing -> forwardOn componentJid fullJids stanza
