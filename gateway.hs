@@ -49,7 +49,8 @@ sipDiscoFeatures = [
 		s"urn:xmpp:jingle:apps:dtls:0",
 		s"urn:xmpp:jingle:apps:rtp:1",
 		s"urn:xmpp:jingle:apps:rtp:audio",
-		s"urn:xmpp:jingle:transports:ice-udp:1"
+		s"urn:xmpp:jingle:transports:ice-udp:1",
+		s"urn:ietf:rfc:3264"
 	]
 
 sipDiscoInfo :: XML.Element -> XML.Element
