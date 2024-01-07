@@ -41,16 +41,16 @@ sipAvailable from to =
 	}
 
 sipDiscoFeatures :: [Text]
-sipDiscoFeatures = [
+sipDiscoFeatures = sort $ [
 		s"http://jabber.org/protocol/caps",
 		s"http://jabber.org/protocol/disco#info",
+		s"urn:ietf:rfc:3264",
 		s"urn:xmpp:jingle-message:0",
 		s"urn:xmpp:jingle:1",
 		s"urn:xmpp:jingle:apps:dtls:0",
 		s"urn:xmpp:jingle:apps:rtp:1",
 		s"urn:xmpp:jingle:apps:rtp:audio",
-		s"urn:xmpp:jingle:transports:ice-udp:1",
-		s"urn:ietf:rfc:3264"
+		s"urn:xmpp:jingle:transports:ice-udp:1"
 	]
 
 sipDiscoInfo :: XML.Element -> XML.Element
