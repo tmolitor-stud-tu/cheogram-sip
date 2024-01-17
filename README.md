@@ -11,6 +11,7 @@ This project implements all of the gateway handling, but heavy lifting is done b
     sudo apt build-dep asterisk
     git clone https://git.singpolyma.net/asterisk
     cd asterisk
+    git deborig
     dgit build
     cd ..
     sudo dpkg -i asterisk*.deb
