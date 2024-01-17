@@ -22,7 +22,7 @@ common defs
                        clock                 >=0.7 && <0.9,
                        errors                >=2.3 && <2.4,
                        hedis,
-                       cryptonite            < 0.30,
+                       cryptonite            < 0.40,
                        HTTP,
                        http-types,
                        monad-loops,
