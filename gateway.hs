@@ -194,9 +194,13 @@ main = do
 	let Just componentJid = XMPP.parseJID componentJidTxt
 	let port = read portTxt
 	let server = XMPP.Server componentJid (textToString host) port
-	let Right redisConnectInfo = RedisURL.parseConnectInfo $ textToString redisURL
 
-	redis <- Redis.checkedConnect redisConnectInfo
+	mredis <- case RedisURL.parseConnectInfo $ textToString redisURL of
+	  Right redisConnectInfo -> fmap Just $ Redis.checkedConnect redisConnectInfo
+	  Left _ -> do
+	    print "No valid Redis specified, skiping..."
+	    return Nothing
+
 	sessionInitiates <- Cache.newCache (Just $ TimeSpec 900 0)
 	fullJids <- Cache.newCache (Just $ TimeSpec 900 0)
 	-- exceptT print return $ runRoutedComponent server secret $ do
@@ -212,7 +216,9 @@ main = do
 					let Just (to, from) = asteriskToReal componentJid $ receivedTo stanza
 					liftIO $ Cache.purgeExpired sessionInitiates
 
-					mostAvailable <- liftIO $ Redis.runRedis redis $ do
+					mostAvailable <- case mredis of
+					  Nothing -> return Nothing
+					  Just redis -> liftIO $ Redis.runRedis redis $ do
 						Right resources <- Redis.hgetall (encodeUtf8 $ bareTxt to)
 						jingleMessage <- anyM (fmap (fromRight False) . flip Redis.sismember (s"urn:xmpp:jingle-message:0")) $ map (B.drop 2 . snd) resources
 						-- TODO: check if mostAvailable supports jingle audio. really we want most available that does
