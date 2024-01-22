@@ -5,7 +5,7 @@ import BasicPrelude
 import System.IO
 	(stdout, stderr, hSetBuffering, BufferMode(LineBuffering))
 import Data.Either                     (fromRight)
-import Control.Error                   (lastZ)
+import Control.Error                   (lastZ, headZ)
 import Safe                            (maximumByMay)
 import System.Clock                    (TimeSpec(..))
 import Control.Monad.Loops             (anyM)
@@ -19,9 +19,6 @@ import qualified Data.XML.Types as XML
 
 import qualified RedisURL
 import Util
-
-asteriskJid :: XMPP.JID
-Just asteriskJid = XMPP.parseJID $ s"asterisk"
 
 sipCapsHash :: Text
 sipCapsHash = decodeUtf8 $ Base64.encode $ discoToCapsHash (sipDiscoInfo $ XML.Element (s"x") [] [])
@@ -190,12 +187,12 @@ main = do
 	hSetBuffering stdout LineBuffering
 	hSetBuffering stderr LineBuffering
 
-	[componentJidTxt, host, portTxt, secret, redisURL] <- getArgs
+	(componentJidTxt:host:portTxt:secret:rest) <- getArgs
 	let Just componentJid = XMPP.parseJID componentJidTxt
 	let port = read portTxt
 	let server = XMPP.Server componentJid (textToString host) port
 
-	mredis <- case RedisURL.parseConnectInfo $ textToString redisURL of
+	mredis <- case RedisURL.parseConnectInfo $ textToString (fromMaybe mempty $ headZ rest) of
 	  Right redisConnectInfo -> fmap Just $ Redis.checkedConnect redisConnectInfo
 	  Left _ -> do
 	    print "No valid Redis specified, skiping..."
@@ -204,6 +201,12 @@ main = do
 	sessionInitiates <- Cache.newCache (Just $ TimeSpec 900 0)
 	fullJids <- Cache.newCache (Just $ TimeSpec 900 0)
 	-- exceptT print return $ runRoutedComponent server secret $ do
+
+	let Just asteriskJid =
+		if length rest > 1 then
+			XMPP.parseJID (rest !! 1)
+		else
+			XMPP.parseJID $ s"asterisk"
 
 	Right () <- XMPP.runComponent server secret $ forever $ do
 		stanza <- XMPP.getStanza
