@@ -105,6 +105,7 @@ extensions = {
 			local jid = channel.CALLERID("name"):get()
 			local from = jid_unescape(jid:sub(0, jid:find("@") - 1))
 			local to = jid_unescape(jid:sub(jid:find("/") + 1))
+			-- outbound calls
 			channel.CALLERID("all"):set(from .. "<" .. from .. ">")
 			app.dial("SIP/" .. to:gsub("\\", "\\\\"):gsub("&", "") .. "!!" .. from:gsub("\\", "\\\\") .. "@sip.cheogram.com")
 		end;
