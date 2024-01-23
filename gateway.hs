@@ -62,16 +62,16 @@ gatewayDiscoFeatures = [
 		s"jid\\20escaping"
 	]
 
-gatewayCapsHash :: Text
-gatewayCapsHash = decodeUtf8 $ Base64.encode $ discoToCapsHash (gatewayDiscoInfo $ XML.Element (s"x") [] [])
+gatewayCapsHash :: [XML.Element] -> Text
+gatewayCapsHash extra = decodeUtf8 $ Base64.encode $ discoToCapsHash (gatewayDiscoInfo (XML.Element (s"x") [] []) extra)
 
-gatewayDiscoInfo :: XML.Element -> XML.Element
-gatewayDiscoInfo q = XML.Element (s"{http://jabber.org/protocol/disco#info}query")
+gatewayDiscoInfo :: XML.Element -> [XML.Element] -> XML.Element
+gatewayDiscoInfo q extra = XML.Element (s"{http://jabber.org/protocol/disco#info}query")
 			(map (\node -> (s"{http://jabber.org/protocol/disco#info}node", [XML.ContentText node])) $ maybeToList $ XML.attributeText (s"node") q) $
-			XML.NodeElement (mkDiscoIdentity (s"gateway") (s"sip") (s"Cheogram SIP")) : map (XML.NodeElement . mkDiscoFeature) gatewayDiscoFeatures
+			XML.NodeElement (mkDiscoIdentity (s"gateway") (s"sip") (s"Cheogram SIP")) : map XML.NodeElement extra ++ map (XML.NodeElement . mkDiscoFeature) gatewayDiscoFeatures
 
-gatewayAvailable :: XMPP.JID -> XMPP.JID -> XMPP.Presence
-gatewayAvailable from to =
+gatewayAvailable :: XMPP.JID -> XMPP.JID -> [XML.Element] -> XMPP.Presence
+gatewayAvailable from to capsExtra =
 	(XMPP.emptyPresence XMPP.PresenceAvailable) {
 		XMPP.presenceTo = Just to,
 		XMPP.presenceFrom = XMPP.parseJID $ bareTxt from ++ s"/gateway",
@@ -79,7 +79,7 @@ gatewayAvailable from to =
 			XML.Element (s"{http://jabber.org/protocol/caps}c") [
 				(s"{http://jabber.org/protocol/caps}hash", [XML.ContentText $ s"sha-1"]),
 				(s"{http://jabber.org/protocol/caps}node", [XML.ContentText $ s "xmpp:sip.cheogram.com"]),
-				(s"{http://jabber.org/protocol/caps}ver", [XML.ContentText gatewayCapsHash])
+				(s"{http://jabber.org/protocol/caps}ver", [XML.ContentText $ gatewayCapsHash capsExtra])
 			] []
 		]
 	}
@@ -115,25 +115,34 @@ bounceStanza (XMPP.ReceivedPresence p) from to =
 		XMPP.presenceTo = Just to
 	}
 
-asteriskToReal :: XMPP.JID -> Maybe XMPP.JID -> Maybe (XMPP.JID, XMPP.JID)
-asteriskToReal componentJid (Just XMPP.JID {
+asteriskToReal :: XMPP.JID -> Maybe Text -> Maybe XMPP.JID -> Maybe (XMPP.JID, XMPP.JID)
+asteriskToReal componentJid mpstnDomain (Just XMPP.JID {
 	XMPP.jidNode = Just escapedTo,
 	XMPP.jidResource = Just escapedFrom
 }) = (,) <$> XMPP.parseJID (unescapeJid $ XMPP.strNode escapedTo) <*>
 	XMPP.parseJID (
-		escapeJid (unescapeJid $ XMPP.strResource escapedFrom) ++ s"@" ++
+		escapeJid (stripPstn $ unescapeJid $ XMPP.strResource escapedFrom) ++ s"@" ++
 		bareTxt componentJid ++ s"/sip"
 	)
-asteriskToReal _ _ = Nothing
+	where
+	stripPstn txt
+		| Just pstnDomain <- mpstnDomain = fromMaybe txt $ T.stripSuffix (s"@" ++ pstnDomain) txt
+                | otherwise = txt
+asteriskToReal _ _ _ = Nothing
 
-realToAsterisk :: XMPP.JID -> Maybe XMPP.JID -> Maybe XMPP.JID -> Maybe XMPP.JID
-realToAsterisk componentJid (Just from) (Just XMPP.JID {
+realToAsterisk :: XMPP.JID -> Maybe Text -> Maybe XMPP.JID -> Maybe XMPP.JID -> Maybe XMPP.JID
+realToAsterisk componentJid mpstnDomain (Just from) (Just XMPP.JID {
 	XMPP.jidNode = Just escapedTo
 }) = XMPP.parseJID $
 	escapeJid (bareTxt from) ++ s"@" ++
 	bareTxt componentJid ++ s"/" ++
-	escapeJid (unescapeJid $ XMPP.strNode escapedTo)
-realToAsterisk _ _ _ = Nothing
+	escapeJid resource
+	where
+	resource
+		| not ((s"@") `T.isInfixOf` unescapedTo), Just pstnDomain <- mpstnDomain = unescapedTo ++ s"@" ++ pstnDomain
+		| otherwise = unescapedTo
+	unescapedTo = unescapeJid $ XMPP.strNode escapedTo
+realToAsterisk _ _ _ _ = Nothing
 
 receivedFrom :: XMPP.ReceivedStanza -> Maybe XMPP.JID
 receivedFrom (XMPP.ReceivedMessage stanza) = XMPP.stanzaFrom stanza
@@ -173,13 +182,13 @@ sessionTerminateId _ = Nothing
 
 -- Decodes the JID and otherwise fowards the stanza on as-is
 -- Also keeps the fullJidCache fresh
-forwardOn :: XMPP.JID -> Cache.Cache Text XMPP.JID -> XMPP.ReceivedStanza -> XMPP.XMPP ()
-forwardOn componentJid fullJidCache stanza = do
+forwardOn :: XMPP.JID -> Maybe Text -> Cache.Cache Text XMPP.JID -> XMPP.ReceivedStanza -> XMPP.XMPP ()
+forwardOn componentJid mpstnDomain fullJidCache stanza = do
 		fullTo <- liftIO $ maybe (return Nothing) (Cache.lookup' fullJidCache) msid
 		liftIO $ forM_ msid $ \sid -> forM_ fullTo $ Cache.insert fullJidCache sid
 		bounceStanza stanza from (fromMaybe to fullTo)
 	where
-	Just (to, from) = asteriskToReal componentJid $ receivedTo stanza
+	Just (to, from) = asteriskToReal componentJid mpstnDomain $ receivedTo stanza
 	msid = jingleSid stanza <|> receivedIqId stanza
 
 main :: IO ()
@@ -195,7 +204,7 @@ main = do
 	mredis <- case RedisURL.parseConnectInfo $ textToString (fromMaybe mempty $ headZ rest) of
 	  Right redisConnectInfo -> fmap Just $ Redis.checkedConnect redisConnectInfo
 	  Left _ -> do
-	    print "No valid Redis specified, skiping..."
+	    putStrLn $ s"No valid Redis specified, skipping..."
 	    return Nothing
 
 	sessionInitiates <- Cache.newCache (Just $ TimeSpec 900 0)
@@ -208,6 +217,20 @@ main = do
 		else
 			XMPP.parseJID $ s"asterisk"
 
+	let capsExtra =
+		if length rest > 2 then
+			[mkDiscoIdentity (s"gateway") (s"pstn") (s"Cheogram SIP")]
+		else
+			[]
+
+	let mpstnDomain =
+		if length rest > 2 then
+			Just (rest !! 2)
+		else
+			Nothing
+
+	forM_ mpstnDomain $ \pstn -> putStrLn $ s"Starting as PSTN gateway also, via " ++ pstn
+
 	Right () <- XMPP.runComponent server secret $ forever $ do
 		stanza <- XMPP.getStanza
 		case receivedFrom stanza of
@@ -216,7 +239,7 @@ main = do
 			Just sfrom
 				| sfrom == asteriskJid,
 				  Just (iq, sid) <- sessionInitiateId stanza -> do
-					let Just (to, from) = asteriskToReal componentJid $ receivedTo stanza
+					let Just (to, from) = asteriskToReal componentJid mpstnDomain $ receivedTo stanza
 					liftIO $ Cache.purgeExpired sessionInitiates
 
 					mostAvailable <- case mredis of
@@ -247,7 +270,7 @@ main = do
 								}
 			Just sfrom
 				| sfrom == asteriskJid,
-				  Just (to, from) <- asteriskToReal componentJid $ receivedTo stanza,
+				  Just (to, from) <- asteriskToReal componentJid mpstnDomain $ receivedTo stanza,
 				  Just sid <- sessionTerminateId stanza -> do
 					mIq <- liftIO $ Cache.lookup' sessionInitiates sid
 					case mIq of
@@ -264,9 +287,9 @@ main = do
 										XML.Element (s"{urn:xmpp:hints}store") [] []
 									]
 								}
-						Nothing -> forwardOn componentJid fullJids stanza
+						Nothing -> forwardOn componentJid mpstnDomain fullJids stanza
 			Just sfrom | sfrom == asteriskJid ->
-				forwardOn componentJid fullJids stanza
+				forwardOn componentJid mpstnDomain fullJids stanza
 			sfrom
 				| XMPP.ReceivedPresence presence <- stanza,
 				  Just from <- sfrom,
@@ -282,21 +305,21 @@ main = do
 						}
 					XMPP.putStanza $ case XMPP.jidNode to of
 						Just _ -> sipAvailable to from
-						Nothing -> gatewayAvailable to from
+						Nothing -> gatewayAvailable to from capsExtra
 				| XMPP.ReceivedPresence presence <- stanza,
 				  Just from <- sfrom,
 				  Just to <- XMPP.stanzaTo presence,
 				  XMPP.PresenceProbe <- XMPP.presenceType presence ->
 					XMPP.putStanza $ case XMPP.jidNode to of
 						Just _ -> sipAvailable to from
-						Nothing -> gatewayAvailable to from
+						Nothing -> gatewayAvailable to from capsExtra
 				| XMPP.ReceivedIQ iq <- stanza,
 				  Just _ <- sfrom,
 				  Just to <- XMPP.stanzaTo iq,
 				  Just query <- child (s"{http://jabber.org/protocol/disco#info}query") iq ->
 					XMPP.putStanza $ case XMPP.jidNode to of
 						Just _ -> iqReply (Just $ sipDiscoInfo query) iq
-						Nothing -> iqReply (Just $ gatewayDiscoInfo query) iq
+						Nothing -> iqReply (Just $ gatewayDiscoInfo query capsExtra) iq
 				| XMPP.ReceivedMessage m <- stanza,
 				  Just from <- sfrom,
 				  Just to <- XMPP.stanzaTo m,
@@ -354,7 +377,7 @@ main = do
 					forM_ minit $ \ini -> do
 						liftIO $ Cache.delete sessionInitiates sid
 						XMPP.putStanza $ iqError errPayload ini
-				| Just from <- realToAsterisk componentJid sfrom (receivedTo stanza) -> do
+				| Just from <- realToAsterisk componentJid mpstnDomain sfrom (receivedTo stanza) -> do
 					liftIO $ forM_ sfrom $ \fullFrom -> forM_ (sessionInitiateId stanza) $ \(_, sid) ->
 						Cache.insert fullJids sid fullFrom
 					liftIO $ forM_ sfrom $ \fullFrom -> forM_ (receivedIqId stanza) $ \iqID ->
