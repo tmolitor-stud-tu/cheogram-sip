@@ -5,6 +5,7 @@ sed -i "s/^port=.*/port=$CONNECT_PORT/" /etc/asterisk/xmpp.conf
 sed -i "s/^username=.*/username=$ASTERISK_COMPONENT_DOMAIN/" /etc/asterisk/xmpp.conf
 sed -i "s/sip.cheogram.com/$COMPONENT_DOMAIN/g" /etc/asterisk/extensions.lua
 sed -i "s/^secret=.*/secret=$ASTERISK_COMPONENT_SECRET/" /etc/asterisk/xmpp.conf
+sed -i "/^; icesupport = yes/icesupport = yes" /etc/asterisk/sip.conf
 if [ -n "$SIP_HOST" ]; then
 	 if ! grep "@$SIP_HOST" /etc/asterisk/sip.conf; then
 		sed -i "/^;register => 1234/a register => $SIP_USER:$SIP_PASSWORD@$SIP_HOST/\"$SIP_JID\"" /etc/asterisk/sip.conf

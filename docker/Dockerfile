@@ -43,6 +43,7 @@ RUN apt-get update \
  && rm -rf /var/cache /root/asterisk*.deb
 
 COPY --from=cheogram-sip /opt/cheogram-sip/asterisk-conf/motif.conf /etc/asterisk/motif.conf
+COPY --from=cheogram-sip /opt/cheogram-sip/asterisk-conf/rtp.conf /etc/asterisk/rtp.conf
 COPY --from=cheogram-sip /opt/cheogram-sip/asterisk-conf/xmpp.conf /etc/asterisk/xmpp.conf
 COPY --from=cheogram-sip /opt/cheogram-sip/asterisk-conf/extensions.lua /etc/asterisk/extensions.lua
 
