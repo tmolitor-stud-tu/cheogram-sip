@@ -22,9 +22,9 @@ WORKDIR /opt
 RUN apt-get update \
  && apt-get -y --no-install-recommends install ca-certificates git ghc cabal-install c2hs pkg-config libxml2-dev libgsasl-dev libgnutls28-dev
 
-RUN git clone https://git.singpolyma.net/cheogram-sip \
+RUN git clone https://github.com/tmolitor-stud-tu/cheogram-sip/ \
  && cd cheogram-sip \
- && git checkout 290130e42955ccc2406a224b6bc05792258d2eb3 \
+ && git checkout master \
  && cabal update \
  && cabal build
 
@@ -39,7 +39,7 @@ COPY --from=cheogram-sip /opt/cheogram-sip/dist-newstyle/build/x86_64-linux/ghc-
 
 RUN apt-get update \
  && apt-get -y --no-install-recommends install /root/asterisk*.deb \
- && apt-get -y --no-install-recommends install libxml2 libgsasl18 libgnutls30 \
+ && apt-get -y --no-install-recommends install libxml2 libgsasl18 libgnutls30t64 \
  && rm -rf /var/cache /root/asterisk*.deb
 
 COPY --from=cheogram-sip /opt/cheogram-sip/asterisk-conf/motif.conf /etc/asterisk/motif.conf
